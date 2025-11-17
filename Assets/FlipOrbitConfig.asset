@@ -1,0 +1,104 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 258b42497e91ac6449fef1d7278651ac, type: 3}
+  m_Name: FlipOrbitConfig
+  m_EditorClassIdentifier: 
+  stages:
+  - startSec: 0
+    spawnIntervalMin: 0.9
+    spawnIntervalMax: 1.4
+    arcSizeDeg: 35
+    telegraphTimeSec: 0
+    travelTimeSec: 1.5
+    stickTimeSec: 0.3
+    fadeOutSec: 0.35
+    startRadiusScale: 2
+    telegraphOffsetScale: 0
+  - startSec: 20
+    spawnIntervalMin: 0.8
+    spawnIntervalMax: 1.2
+    arcSizeDeg: 35
+    telegraphTimeSec: 0
+    travelTimeSec: 1.3
+    stickTimeSec: 0
+    fadeOutSec: 0.35
+    startRadiusScale: 2
+    telegraphOffsetScale: 0
+  - startSec: 40
+    spawnIntervalMin: 0.7
+    spawnIntervalMax: 1
+    arcSizeDeg: 35
+    telegraphTimeSec: 0
+    travelTimeSec: 1
+    stickTimeSec: 0
+    fadeOutSec: 0.35
+    startRadiusScale: 2
+    telegraphOffsetScale: 0
+  - startSec: 60
+    spawnIntervalMin: 0.5
+    spawnIntervalMax: 1
+    arcSizeDeg: 35
+    telegraphTimeSec: 0
+    travelTimeSec: 0.5
+    stickTimeSec: 0
+    fadeOutSec: 0.35
+    startRadiusScale: 1
+    telegraphOffsetScale: 0
+  - startSec: 80
+    spawnIntervalMin: 0.3
+    spawnIntervalMax: 1
+    arcSizeDeg: 35
+    telegraphTimeSec: 0
+    travelTimeSec: 0.3
+    stickTimeSec: 0
+    fadeOutSec: 0.35
+    startRadiusScale: 0.5
+    telegraphOffsetScale: 0
+  - startSec: 100
+    spawnIntervalMin: 0.3
+    spawnIntervalMax: 1
+    arcSizeDeg: 35
+    telegraphTimeSec: 0
+    travelTimeSec: 0.3
+    stickTimeSec: 0
+    fadeOutSec: 0.35
+    startRadiusScale: 0.5
+    telegraphOffsetScale: 0
+  scoreForMaxSpeed: 1200
+  playerSpeedGamma: 1.6
+  playerMinSpeedDegPerSec: 95
+  playerMaxSpeedDegPerSec: 200
+  difficultyGamma: 0.5
+  useExactArcHit: 1
+  hitPadDeg: 2
+  grazeThresholdDeg: 6
+  arcHitMode: 0
+  orbScore: 10
+  chainStep: 0.1
+  chainMax: 3
+  chainResetIfNoPickupSec: 1.5
+  orbLifetimeSec: 4
+  orbJitterDeg: 6
+  orbPickupPadDeg: 4
+  arcVerts: 96
+  arcLineWidth: 0.1
+  arcOrderInLayer: 20
+  minSpawnSepFromPlayerDeg: 35
+  forceFadeAllSec: 0.3
+  fadeArcsWhenOrbPicked: 0
+  fadeArcsWhenOrbTimeout: 0
+  travelTimeMinScale: 0.25
+  telegraphTimeMinScale: 0.6
+  travelDifficultyGamma: 1.2
+  baseMaxConcurrentArcs: 3
+  maxMaxConcurrentArcs: 11
+  arcsMaxGamma: 1.2

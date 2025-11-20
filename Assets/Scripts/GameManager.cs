@@ -6,7 +6,14 @@ using TMPro;
 
 public class GameManager : MonoBehaviour
 {
-    public enum State { Title, Playing, Paused, GameOver }
+    public enum State
+    {
+        Title,
+        Playing,
+        Paused,
+        GameOver,
+        Countdown   // ★カウントダウン用ステートを追加（最後に追加するのが安全）
+    }
 
     [Header("Refs")]
     public FlipOrbitConfig config;
@@ -24,6 +31,17 @@ public class GameManager : MonoBehaviour
     public TextMeshProUGUI finalScoreText;
     public TextMeshProUGUI bestScoreText;
 
+    [Header("UI - Ranking")]
+    [Tooltip("ゲームオーバー画面に表示する RANK 用テキスト")]
+    public TextMeshProUGUI rankText;
+
+    [Header("Countdown")]
+    [Tooltip("中央に表示する 3,2,1 カウント用テキスト")]
+    public TextMeshProUGUI countdownText;
+    [Tooltip("カウントダウン時間（秒）")]
+    public float countdownDuration = 3f;
+    private float countdownTimer = 0f;
+
     [Header("Optional")]
     public AudioManager audioMgr;
     public CameraShake cameraShake;
@@ -33,6 +51,9 @@ public class GameManager : MonoBehaviour
     public int score = 0;
     public float multiplier = 1f;
     public int bestScore = 0;
+
+    // ベストスコア保存用キー
+    private const string BestScoreKey = "FO_BEST_SCORE";
 
     // 入力取りこぼし対策（バッファ）
     [Header("Input Buffer")]
@@ -77,6 +98,21 @@ public class GameManager : MonoBehaviour
         grazeThresholdDeg = config ? config.grazeThresholdDeg : 6f;
         orbPickupPadRad = Mathf.Deg2Rad * (config ? config.orbPickupPadDeg : 4f);
 
+        // 保存しておいたベストスコアを読み込み
+        bestScore = PlayerPrefs.GetInt(BestScoreKey, 0);
+
+        // カウントダウンUIは最初は非表示
+        if (countdownText != null)
+        {
+            countdownText.gameObject.SetActive(false);
+        }
+
+        // RANK 表示初期化
+        if (rankText != null)
+        {
+            rankText.text = "RANK --";
+        }
+
         ApplyUI();
         SwitchState(State.Title, true);
     }
@@ -88,8 +124,13 @@ public class GameManager : MonoBehaviour
         switch (state)
         {
             case State.Title:
-                if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return) || Input.GetMouseButtonDown(0))
+                // タイトル画面：スペース / エンター / クリック（タップ）で開始
+                if (Input.GetKeyDown(KeyCode.Space) ||
+                    Input.GetKeyDown(KeyCode.Return) ||
+                    Input.GetMouseButtonDown(0))
+                {
                     StartGame();
+                }
                 break;
 
             case State.Playing:
@@ -100,21 +141,41 @@ public class GameManager : MonoBehaviour
                 break;
 
             case State.GameOver:
-                if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.R))
+                // GameOver 中：スペース / R / クリック（タップ）でリトライ
+                if (Input.GetKeyDown(KeyCode.Space) ||
+                    Input.GetKeyDown(KeyCode.R) ||
+                    Input.GetMouseButtonDown(0))
                 {
-                    if ((Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)) && Input.GetKeyDown(KeyCode.R))
+                    // Shift+R だけは「完全リスタート（シーン再読み込み）」のショートカット
+                    if ((Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)) &&
+                        Input.GetKeyDown(KeyCode.R))
+                    {
                         Restart(); // タイトルへ
+                    }
                     else
-                        StartGame(); // 即リトライ
+                    {
+                        StartGame(); // ★ここからが「リトライ」扱い（広告ロジック込み）
+                    }
                 }
+                break;
+
+            case State.Countdown:
+                TickCountdown(Time.deltaTime);
                 break;
         }
     }
 
+    /// <summary>
+    /// グローバル入力。フリップは Playing 中だけ受け付ける。
+    /// </summary>
     private void HandleGlobalInputs()
     {
-        if (Input.GetKeyDown(KeyCode.Space) || Input.GetMouseButtonDown(0))
-            QueueFlip();
+        // フリップ入力（PC：Space / クリック、モバイル：タップ→Mouse0扱い）
+        if (state == State.Playing)
+        {
+            if (Input.GetKeyDown(KeyCode.Space) || Input.GetMouseButtonDown(0))
+                QueueFlip();
+        }
 
         if (state == State.Playing)
         {
@@ -142,8 +203,21 @@ public class GameManager : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// タイトル / GameOver から呼ばれるゲーム開始処理。
+    /// GameOver → StartGame のときだけ「リトライ」とみなして広告をカウント。
+    /// ここではまだ Playing にせず、Countdown ステートに入る。
+    /// </summary>
     private void StartGame()
     {
+        // GameOver 状態からの StartGame 呼び出しだけを「リトライ」とみなす
+        bool isRetry = (state == State.GameOver);
+        if (isRetry && AdsManager.Instance != null)
+        {
+            // 偶数回リトライ時だけインタースティシャル広告を表示
+            AdsManager.Instance.RegisterRetryAndShowInterstitialIfNeeded();
+        }
+
         score = 0;
         multiplier = 1f;
         chainNoPickupTimer = 0f;
@@ -168,8 +242,48 @@ public class GameManager : MonoBehaviour
         ApplySpeedFromScore();
         ApplyUI();
 
-        SwitchState(State.Playing, true);
-        TrySpawnOrb();
+        // ★カウントダウン開始
+        if (countdownText != null)
+        {
+            countdownTimer = Mathf.Max(1f, countdownDuration);
+            countdownText.gameObject.SetActive(true);
+            countdownText.text = Mathf.CeilToInt(countdownTimer).ToString();
+        }
+        else
+        {
+            countdownTimer = 0f;
+        }
+
+        SwitchState(State.Countdown, true);
+        // ※ここでは TrySpawnOrb() は呼ばない。カウントダウン終了時に呼ぶ。
+    }
+
+    /// <summary>
+    /// 3,2,1 カウントダウン。
+    /// </summary>
+    private void TickCountdown(float dt)
+    {
+        countdownTimer -= dt;
+
+        if (countdownTimer > 0f)
+        {
+            if (countdownText != null)
+            {
+                int display = Mathf.CeilToInt(countdownTimer);
+                countdownText.text = display.ToString();
+            }
+        }
+        else
+        {
+            // カウントダウン終了 → テキストを消してゲーム開始
+            if (countdownText != null)
+            {
+                countdownText.gameObject.SetActive(false);
+            }
+
+            SwitchState(State.Playing, true);
+            TrySpawnOrb();
+        }
     }
 
     private void TickPlaying(float dt)
@@ -177,7 +291,11 @@ public class GameManager : MonoBehaviour
         if (flipBufferTimer > 0f)
         {
             flipBufferTimer -= dt;
-            if (flipBufferTimer < 0f) { flipBufferTimer = 0f; pendingFlipCount = 0; }
+            if (flipBufferTimer < 0f)
+            {
+                flipBufferTimer = 0f;
+                pendingFlipCount = 0;
+            }
         }
 
         ConsumeFlipBuffered();
@@ -194,7 +312,7 @@ public class GameManager : MonoBehaviour
 
         orb?.Tick(dt);
 
-        // ★タイムアウト時の一括フェードはフラグで制御
+        // タイムアウト時の一括フェードはフラグで制御
         if (orb != null && orb.ConsumeJustTimedOut())
         {
             if (config == null || config.fadeArcsWhenOrbTimeout)
@@ -203,7 +321,7 @@ public class GameManager : MonoBehaviour
             TrySpawnOrb();
         }
 
-        // フェーズ対応のスイープ判定
+        // スイープ判定
         if (CheckHitSwept(prevAngle, currAngle, dt))
         {
             OnMiss();
@@ -275,15 +393,66 @@ public class GameManager : MonoBehaviour
         GUI.Box(new Rect(12, 12, 560, 32), debugLine, style);
     }
 
+    /// <summary>
+    /// ミス時：GameOver に遷移し、BEST・RANK を表示＆ランキング送信。
+    /// </summary>
     private void OnMiss()
     {
         SwitchState(State.GameOver, true);
         audioMgr?.PlayMiss();
         cameraShake?.Shake(0.25f, 0.15f);
 
-        if (score > bestScore) bestScore = score;
+        // ベストスコア更新＆保存
+        if (score > bestScore)
+        {
+            bestScore = score;
+            PlayerPrefs.SetInt(BestScoreKey, bestScore);
+            PlayerPrefs.Save();
+        }
+
         if (finalScoreText) finalScoreText.text = $"SCORE  {score}";
         if (bestScoreText) bestScoreText.text = $"BEST   {bestScore}";
+
+        // RANK は一旦「読み込み中」表示にしておく
+        if (rankText != null)
+        {
+            rankText.text = "RANK ...";
+        }
+
+        // オンラインランキングへスコア送信＆順位取得
+        if (GameCenterManager.Instance != null)
+        {
+            GameCenterManager.Instance.ReportScore(score);
+
+            if (rankText != null)
+            {
+                GameCenterManager.Instance.LoadLocalPlayerRank(OnRankLoaded);
+            }
+        }
+        else
+        {
+            if (rankText != null)
+            {
+                rankText.text = "RANK --";
+            }
+        }
+    }
+
+    /// <summary>
+    /// GameCenter から順位が返ってきたときに呼ばれるコールバック。
+    /// </summary>
+    private void OnRankLoaded(bool success, long rank)
+    {
+        if (rankText == null) return;
+
+        if (!success || rank <= 0)
+        {
+            rankText.text = "RANK --";
+        }
+        else
+        {
+            rankText.text = $"RANK  {rank}";
+        }
     }
 
     private void DoGraze(float dt)
@@ -334,7 +503,7 @@ public class GameManager : MonoBehaviour
             float pct = config ? Mathf.Clamp01((multiplier - 1f) / config.chainMax) : Mathf.Clamp01((multiplier - 1f) / 3f);
             audioMgr?.PlayPickup(1f + pct * 0.4f);
 
-            // ★オーブ取得時の一括フェードはフラグで制御（今回false推奨）
+            // オーブ取得時の一括フェードはフラグで制御
             if (config == null || config.fadeArcsWhenOrbPicked)
                 spawner?.ForceFadeAll(config ? config.forceFadeAllSec : 0.3f);
 
@@ -438,6 +607,7 @@ public class GameManager : MonoBehaviour
         if (multText) multText.text = $"x{multiplier:0.0}";
         if (titlePanel) titlePanel.SetActive(state == State.Title);
         if (gameOverPanel) gameOverPanel.SetActive(state == State.GameOver);
+        // rankText / countdownText はそれぞれ別で制御しているのでここでは触らない
     }
 
     private void SwitchState(State s, bool immediate = false)
@@ -458,6 +628,21 @@ public class GameManager : MonoBehaviour
         Time.timeScale = 1f;
         Scene cur = SceneManager.GetActiveScene();
         SceneManager.LoadScene(cur.buildIndex);
+    }
+
+    // UIボタン用：タイトル or リザルトの「RETRY」ボタンから呼ぶ用（今は使わなくてもOK）
+    public void OnClickRetryButton()
+    {
+        StartGame();
+    }
+
+    // UIボタン用：ランキングボタンから呼ぶ
+    public void OnClickShowLeaderboard()
+    {
+        if (GameCenterManager.Instance != null)
+        {
+            GameCenterManager.Instance.ShowLeaderboard();
+        }
     }
 
     private static float WrapRad(float a)

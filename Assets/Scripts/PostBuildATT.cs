@@ -16,7 +16,7 @@ public class PostBuildATT
         plist.ReadFromFile(plistPath);
 
         plist.root.SetString("NSUserTrackingUsageDescription",
-            "このアプリでは最適な広告を表示するために情報を使用します");
+            "We use this information to show you relevant ads.");
 
         plist.WriteToFile(plistPath);
     }

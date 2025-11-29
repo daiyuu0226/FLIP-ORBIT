@@ -661,8 +661,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0b13167a8c54c88429b45c6bac142c1f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AdsManager
-  bannerAdUnitIdIos: 'ca-app-pub-4939796600997241/3121641911 '
-  interstitialAdUnitIdIos: 'ca-app-pub-4939796600997241/4097905565 '
+  bannerAdUnitIdIos: ca-app-pub-4939796600997241/3121641911
+  interstitialAdUnitIdIos: ca-app-pub-4939796600997241/4097905565
 --- !u!4 &464589234
 Transform:
   m_ObjectHideFlags: 0

@@ -2,28 +2,30 @@
 using GoogleMobileAds;
 using GoogleMobileAds.Api;
 using System;
-using System.Drawing;
+using System.Collections;
 using UnityEngine;
-using UnityEngine.UIElements;
+
+#if UNITY_IOS
+using Unity.Advertisement.IosSupport;
+#endif
 
 /// <summary>
 /// AdMob の初期化・バナー・インタースティシャルを一括管理。
-/// - 起動時にバナー表示
+/// - 起動時にATT許可リクエスト後、バナー表示
 /// - リトライ偶数回でインタースティシャル表示
 /// </summary>
 public class AdsManager : MonoBehaviour
 {
     public static AdsManager Instance { get; private set; }
 
-    [Header("◆ iOS 用 Ad Unit ID（※開発中はテストIDのままでOK）")]
-    [SerializeField] private string bannerAdUnitIdIos = "ca-app-pub-3940256099942544/2934735716";    // Banner (iOS test)
-    [SerializeField] private string interstitialAdUnitIdIos = "ca-app-pub-3940256099942544/4411468910"; // Interstitial (iOS test)
+    [Header("◆ iOS 用 Ad Unit ID")]
+    [SerializeField] private string bannerAdUnitIdIos = "ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX";
+    [SerializeField] private string interstitialAdUnitIdIos = "ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX";
 
 #if UNITY_IOS
     private string BannerAdUnitId => bannerAdUnitIdIos;
     private string InterstitialAdUnitId => interstitialAdUnitIdIos;
 #else
-    // iOS 以外では広告は実質無効
     private string BannerAdUnitId => "unused";
     private string InterstitialAdUnitId => "unused";
 #endif
@@ -31,7 +33,6 @@ public class AdsManager : MonoBehaviour
     private BannerView bannerView;
     private InterstitialAd interstitialAd;
 
-    // リトライ回数カウント（偶数回でインタースティシャル表示）
     private int retryCount;
     private bool isInitialized;
 
@@ -49,7 +50,9 @@ public class AdsManager : MonoBehaviour
 
     private void Start()
     {
-#if (UNITY_IOS || UNITY_ANDROID) && !UNITY_EDITOR
+#if UNITY_IOS && !UNITY_EDITOR
+        StartCoroutine(RequestATTAndInitialize());
+#elif UNITY_ANDROID && !UNITY_EDITOR
         InitializeAds();
 #else
         Debug.Log("[Ads] Editor or unsupported platform. Ads disabled.");
@@ -62,25 +65,67 @@ public class AdsManager : MonoBehaviour
         DestroyInterstitial();
     }
 
+    // ------------------ ATT (iOS 14.5+) ------------------
+
+#if UNITY_IOS
+    private IEnumerator RequestATTAndInitialize()
+    {
+        var status = ATTrackingStatusBinding.GetAuthorizationTrackingStatus();
+        Debug.Log($"[Ads] Current ATT status: {status}");
+
+        if (status == ATTrackingStatusBinding.AuthorizationTrackingStatus.NOT_DETERMINED)
+        {
+            Debug.Log("[Ads] Requesting ATT permission...");
+            ATTrackingStatusBinding.RequestAuthorizationTracking();
+
+            // ユーザーが選択するまで待つ（最大10秒）
+            float timeout = 10f;
+            float elapsed = 0f;
+            while (ATTrackingStatusBinding.GetAuthorizationTrackingStatus()
+                   == ATTrackingStatusBinding.AuthorizationTrackingStatus.NOT_DETERMINED
+                   && elapsed < timeout)
+            {
+                yield return new WaitForSeconds(0.1f);
+                elapsed += 0.1f;
+            }
+        }
+
+        var finalStatus = ATTrackingStatusBinding.GetAuthorizationTrackingStatus();
+        Debug.Log($"[Ads] Final ATT status: {finalStatus}");
+
+        // ATTの結果に関わらず広告は初期化する（許可なしでも非パーソナライズ広告は出る）
+        InitializeAds();
+    }
+#endif
+
     // ------------------ 初期化 ------------------
 
     private void InitializeAds()
     {
         if (isInitialized) return;
 
+        Debug.Log("[Ads] Starting MobileAds.Initialize...");
+        Debug.Log($"[Ads] BannerAdUnitId = {BannerAdUnitId}");
+        Debug.Log($"[Ads] InterstitialAdUnitId = {InterstitialAdUnitId}");
+
         MobileAds.Initialize(initStatus =>
         {
             isInitialized = true;
             Debug.Log("[Ads] MobileAds initialized.");
 
-            CreateBanner();        // 起動時からバナー表示
-            RequestInterstitial(); // インタースティシャルを1本プリロード
+            // アダプター状態をログ出力（デバッグ用）
+            foreach (var pair in initStatus.getAdapterStatusMap())
+            {
+                Debug.Log($"[Ads] Adapter: {pair.Key}, State: {pair.Value.InitializationState}, Desc: {pair.Value.Description}");
+            }
+
+            CreateBanner();
+            RequestInterstitial();
         });
     }
 
     private AdRequest CreateAdRequest()
     {
-        // 必要ならここでキーワードなど追加
         return new AdRequest();
     }
 
@@ -94,26 +139,28 @@ public class AdsManager : MonoBehaviour
             return;
         }
 
+        Debug.Log("[Ads] Creating banner...");
+
         if (bannerView != null)
         {
             bannerView.Destroy();
             bannerView = null;
         }
 
-        // 画面下部に標準サイズで表示
         bannerView = new BannerView(BannerAdUnitId, AdSize.Banner, AdPosition.Bottom);
 
         bannerView.OnBannerAdLoaded += () =>
         {
-            Debug.Log("[Ads] Banner loaded.");
+            Debug.Log("[Ads] Banner loaded successfully!");
         };
 
         bannerView.OnBannerAdLoadFailed += error =>
         {
-            Debug.LogError($"[Ads] Banner failed to load: {error}");
+            Debug.LogError($"[Ads] Banner FAILED to load: Code={error.GetCode()}, Message={error.GetMessage()}");
         };
 
         bannerView.LoadAd(CreateAdRequest());
+        Debug.Log("[Ads] Banner LoadAd called.");
     }
 
     private void DestroyBanner()
@@ -135,7 +182,7 @@ public class AdsManager : MonoBehaviour
             return;
         }
 
-        Debug.Log("[Ads] Request interstitial...");
+        Debug.Log("[Ads] Requesting interstitial...");
         var request = CreateAdRequest();
 
         InterstitialAd.Load(InterstitialAdUnitId, request,
@@ -143,15 +190,14 @@ public class AdsManager : MonoBehaviour
             {
                 if (error != null || ad == null)
                 {
-                    Debug.LogError($"[Ads] Interstitial failed to load: {error}");
+                    Debug.LogError($"[Ads] Interstitial FAILED to load: {error?.GetMessage()}");
                     interstitialAd = null;
                     return;
                 }
 
-                Debug.Log("[Ads] Interstitial loaded.");
+                Debug.Log("[Ads] Interstitial loaded successfully!");
                 interstitialAd = ad;
 
-                // 閉じたら次をプリロード
                 interstitialAd.OnAdFullScreenContentClosed += () =>
                 {
                     Debug.Log("[Ads] Interstitial closed. Preloading next.");
@@ -196,6 +242,7 @@ public class AdsManager : MonoBehaviour
     {
         if (interstitialAd != null && interstitialAd.CanShowAd())
         {
+            Debug.Log("[Ads] Showing interstitial...");
             interstitialAd.Show();
         }
         else
